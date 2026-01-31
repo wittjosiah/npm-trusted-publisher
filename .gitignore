@@ -1,0 +1,15 @@
+# Output files
+unpublished-packages.txt
+failed-packages.txt
+
+# macOS
+.DS_Store
+
+# Node
+node_modules/
+
+# Editor
+*.swp
+*.swo
+.idea/
+.vscode/

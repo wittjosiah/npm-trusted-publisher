@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>npm Trusted Publisher</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <h1>npm Trusted Publisher</h1>
+
+    <section class="config-section">
+      <h2>GitHub Configuration</h2>
+      <div class="form-group">
+        <label for="owner">Repository Owner</label>
+        <input type="text" id="owner" placeholder="dxos">
+      </div>
+      <div class="form-group">
+        <label for="repository">Repository Name</label>
+        <input type="text" id="repository" placeholder="dxos">
+      </div>
+      <div class="form-group">
+        <label for="workflow">Workflow Filename</label>
+        <input type="text" id="workflow" placeholder="publish-all.yml">
+      </div>
+      <div class="form-group">
+        <label for="environment">Environment (optional)</label>
+        <input type="text" id="environment" placeholder="">
+      </div>
+    </section>
+
+    <section class="config-section">
+      <h2>Options</h2>
+      <div class="form-group">
+        <label for="navigationMode">Navigation Mode</label>
+        <select id="navigationMode">
+          <option value="manual">Manual - Click "Next" after each</option>
+          <option value="auto">Auto - Advance after success</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="autoSubmit">Form Submission</label>
+        <select id="autoSubmit">
+          <option value="false">Semi-auto - Fill form only</option>
+          <option value="true">Auto - Click submit button</option>
+        </select>
+      </div>
+      <div class="form-group" id="delayGroup">
+        <label for="delay">Delay between packages (seconds)</label>
+        <input type="number" id="delay" value="2" min="1" max="60">
+      </div>
+    </section>
+
+    <section class="config-section">
+      <h2>Packages</h2>
+      <div class="form-group">
+        <label for="packages">Package List (one per line)</label>
+        <textarea id="packages" rows="8" placeholder="@dxos/client
+@dxos/echo-schema
+@dxos/react-client"></textarea>
+      </div>
+    </section>
+
+    <section class="controls">
+      <div class="button-row">
+        <button id="startBtn" class="primary">Start</button>
+        <button id="pauseBtn" disabled>Pause</button>
+        <button id="resumeBtn" disabled>Resume</button>
+        <button id="resetBtn">Reset</button>
+      </div>
+      <div class="button-row">
+        <button id="nextBtn" class="secondary" disabled>Next Package</button>
+        <button id="fillBtn" class="secondary">Fill Current Page</button>
+      </div>
+    </section>
+
+    <section class="progress-section" id="progressSection">
+      <h2>Progress</h2>
+      <div class="progress-info">
+        <span id="progressText">0 of 0</span>
+        <span id="currentPackage"></span>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+    </section>
+
+    <section class="results-section" id="resultsSection">
+      <h2>Results</h2>
+      <div class="results-tabs">
+        <button class="tab active" data-tab="completed">Completed (<span id="completedCount">0</span>)</button>
+        <button class="tab" data-tab="skipped">Skipped (<span id="skippedCount">0</span>)</button>
+        <button class="tab" data-tab="failed">Failed (<span id="failedCount">0</span>)</button>
+        <button class="tab" data-tab="pending">Pending (<span id="pendingCount">0</span>)</button>
+      </div>
+      <div class="results-list" id="resultsList"></div>
+    </section>
+
+    <section class="status-section">
+      <div id="statusMessage"></div>
+    </section>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
