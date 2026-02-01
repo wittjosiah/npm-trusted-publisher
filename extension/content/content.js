@@ -131,6 +131,104 @@
     return false;
   }
 
+  // Click the "Delete" button to remove trusted publisher config.
+  function clickDeleteButton() {
+    const buttons = document.querySelectorAll('button');
+    for (const button of buttons) {
+      const text = button.textContent?.trim();
+      if (text === 'Delete') {
+        button.click();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Check if trusted publisher can be deleted (has Delete button).
+  function hasDeleteButton() {
+    const buttons = document.querySelectorAll('button');
+    for (const button of buttons) {
+      const text = button.textContent?.trim();
+      if (text === 'Delete') {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Check if Cloudflare Turnstile or other challenge is present.
+  function hasTurnstileChallenge() {
+    // Check for full-page Cloudflare challenge (title says "Just a moment").
+    if (document.title.includes('Just a moment')) {
+      console.log('[npm-trusted-publisher] Detected full-page Cloudflare challenge (title)');
+      return true;
+    }
+
+    // Check for Cloudflare challenge page structure.
+    const mainWrapper = document.querySelector('.main-wrapper');
+    const verifyHumanText = document.body?.textContent?.includes('Verify you are human');
+    if (mainWrapper && verifyHumanText) {
+      console.log('[npm-trusted-publisher] Detected Cloudflare challenge page structure');
+      return true;
+    }
+
+    // Check for Turnstile iframe.
+    const turnstileIframe = document.querySelector('iframe[src*="turnstile"], iframe[src*="challenges.cloudflare"]');
+    if (turnstileIframe) {
+      console.log('[npm-trusted-publisher] Detected Turnstile iframe');
+      return true;
+    }
+
+    // Check for Turnstile widget container.
+    const turnstileWidget = document.querySelector('[class*="turnstile"], [class*="cf-turnstile"], #cf-turnstile');
+    if (turnstileWidget) {
+      console.log('[npm-trusted-publisher] Detected Turnstile widget');
+      return true;
+    }
+
+    // Check for OTP/verification input.
+    const otpInput = document.querySelector('input[name*="otp"], input[name*="code"], input[placeholder*="code"], input[autocomplete="one-time-code"]');
+    if (otpInput) {
+      console.log('[npm-trusted-publisher] Detected OTP input');
+      return true;
+    }
+
+    // Check for "Ray ID" which appears on Cloudflare challenge pages.
+    if (document.body?.textContent?.includes('Ray ID:')) {
+      console.log('[npm-trusted-publisher] Detected Cloudflare Ray ID');
+      return true;
+    }
+
+    return false;
+  }
+
+  // Wait for Turnstile/challenge to be completed.
+  function waitForChallengeCompletion(timeout = 120000) {
+    return new Promise((resolve) => {
+      const startTime = Date.now();
+
+      const checkChallenge = () => {
+        // If no challenge present, we're done.
+        if (!hasTurnstileChallenge()) {
+          resolve(true);
+          return;
+        }
+
+        // Timeout after 2 minutes.
+        if (Date.now() - startTime > timeout) {
+          console.log('[npm-trusted-publisher] Challenge timeout, proceeding anyway');
+          resolve(false);
+          return;
+        }
+
+        // Check again in 500ms.
+        setTimeout(checkChallenge, 500);
+      };
+
+      checkChallenge();
+    });
+  }
+
   // Check for success notification.
   function checkForSuccess() {
     // Check various possible success indicators.
@@ -276,16 +374,38 @@
 
   // Handle page load - auto-fill if state is running.
   async function handlePageLoad() {
-    // Only run on package access pages.
-    if (!isAccessPage()) {
-      return;
-    }
-
-    // Get state from storage.
+    // Get state from storage first to check if we're running.
     const stored = await chrome.storage.local.get(['trustedPublisherState']);
     const state = stored.trustedPublisherState;
 
     if (!state || state.status !== 'running') {
+      return;
+    }
+
+    // Check for full-page Cloudflare challenge BEFORE checking if we're on access page.
+    // The challenge page replaces the entire page content.
+    if (hasTurnstileChallenge()) {
+      console.log('[npm-trusted-publisher] Full-page challenge detected on load, waiting...');
+      chrome.runtime.sendMessage({
+        action: 'packageResult',
+        success: false,
+        packageName: state.packages[state.currentIndex],
+        error: 'Waiting for Cloudflare challenge...',
+        waiting: true,
+      }).catch(() => {});
+
+      await waitForChallengeCompletion();
+      console.log('[npm-trusted-publisher] Challenge completed, reloading page state...');
+
+      // After challenge, the page should redirect/reload to the actual content.
+      // Wait a moment and re-run.
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      handlePageLoad();
+      return;
+    }
+
+    // Only run on package access pages.
+    if (!isAccessPage()) {
       return;
     }
 
@@ -370,7 +490,90 @@
       return;
     }
 
-    // Check if trusted publisher is already configured (before this session).
+    // Handle DELETE mode.
+    if (state.config.mode === 'delete') {
+      console.log(`[npm-trusted-publisher] DELETE mode for ${packageName}`);
+
+      // Check for and wait for any Turnstile/challenge before proceeding.
+      if (hasTurnstileChallenge()) {
+        console.log(`[npm-trusted-publisher] Challenge detected, waiting for completion...`);
+        chrome.runtime.sendMessage({
+          action: 'packageResult',
+          success: false,
+          packageName: packageName,
+          error: 'Waiting for challenge completion...',
+          waiting: true,
+        }).catch(() => {});
+
+        await waitForChallengeCompletion();
+        console.log(`[npm-trusted-publisher] Challenge completed, continuing...`);
+
+        // Re-check state after challenge (page may have reloaded).
+        const storedAfterChallenge = await chrome.storage.local.get(['trustedPublisherState']);
+        if (!storedAfterChallenge.trustedPublisherState || storedAfterChallenge.trustedPublisherState.status !== 'running') {
+          return;
+        }
+      }
+
+      if (!hasDeleteButton()) {
+        console.log(`[npm-trusted-publisher] No Delete button found for ${packageName}, skipping.`);
+        // No trusted publisher configured, skip.
+        if (!state.skipped) state.skipped = [];
+        if (!state.skipped.includes(packageName)) {
+          state.skipped.push(packageName);
+        }
+        state.currentIndex++;
+
+        if (state.currentIndex >= state.packages.length) {
+          state.status = 'idle';
+          await chrome.storage.local.set({ trustedPublisherState: state });
+          console.log('[npm-trusted-publisher] All packages processed!');
+        } else {
+          await chrome.storage.local.set({ trustedPublisherState: state });
+          setTimeout(() => {
+            const nextPkg = state.packages[state.currentIndex];
+            const nextUrl = `https://www.npmjs.com/package/${nextPkg}/access`;
+            console.log(`[npm-trusted-publisher] Navigating to next: ${nextPkg}`);
+            window.location.href = nextUrl;
+          }, 500);
+        }
+
+        chrome.runtime.sendMessage({
+          action: 'packageResult',
+          success: true,
+          packageName: packageName,
+          alreadyConfigured: true, // Treat as skipped (nothing to delete).
+        }).catch(() => {});
+        return;
+      }
+
+      // Setup observer for delete success.
+      setupSuccessObserver(packageName);
+
+      // Click the Delete button.
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const clicked = clickDeleteButton();
+      if (!clicked) {
+        chrome.runtime.sendMessage({
+          action: 'packageResult',
+          success: false,
+          packageName: packageName,
+          error: 'Failed to click Delete button',
+        }).catch(() => {});
+        return;
+      }
+
+      // Wait for any post-click challenge (OTP, Turnstile, etc).
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      if (hasTurnstileChallenge()) {
+        console.log(`[npm-trusted-publisher] Post-delete challenge detected, waiting...`);
+        await waitForChallengeCompletion();
+      }
+
+      return;
+    }
+
+    // CONFIGURE mode - Check if trusted publisher is already configured (before this session).
     const alreadyConfigured = isAlreadyConfigured(state.config);
     console.log(`[npm-trusted-publisher] Package ${packageName}: alreadyConfigured=${alreadyConfigured}`);
 

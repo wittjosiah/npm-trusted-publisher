@@ -320,7 +320,8 @@ button.secondary:hover:not(:disabled) {
   color: #e65100;
 }
 
-/* Hide delay group when manual mode is selected */
-#delayGroup.hidden {
+/* Hide groups when not applicable */
+#delayGroup.hidden,
+#autoSubmitGroup.hidden {
   display: none;
 }

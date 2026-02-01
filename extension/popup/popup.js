@@ -7,6 +7,7 @@ let state = {
   failed: [],
   skipped: [], // Already configured packages.
   config: {
+    mode: 'configure', // configure or delete
     owner: 'dxos',
     repository: 'dxos',
     workflow: 'publish-all.yml',
@@ -19,12 +20,14 @@ let state = {
 
 // DOM elements.
 const elements = {
+  mode: document.getElementById('mode'),
   owner: document.getElementById('owner'),
   repository: document.getElementById('repository'),
   workflow: document.getElementById('workflow'),
   environment: document.getElementById('environment'),
   navigationMode: document.getElementById('navigationMode'),
   autoSubmit: document.getElementById('autoSubmit'),
+  autoSubmitGroup: document.getElementById('autoSubmitGroup'),
   delay: document.getElementById('delay'),
   delayGroup: document.getElementById('delayGroup'),
   packages: document.getElementById('packages'),
@@ -34,6 +37,8 @@ const elements = {
   resetBtn: document.getElementById('resetBtn'),
   nextBtn: document.getElementById('nextBtn'),
   fillBtn: document.getElementById('fillBtn'),
+  retryBtn: document.getElementById('retryBtn'),
+  skipBtn: document.getElementById('skipBtn'),
   progressText: document.getElementById('progressText'),
   currentPackage: document.getElementById('currentPackage'),
   progressFill: document.getElementById('progressFill'),
@@ -65,6 +70,7 @@ async function loadState() {
   }
 
   // Populate form fields.
+  elements.mode.value = state.config.mode || 'configure';
   elements.owner.value = state.config.owner;
   elements.repository.value = state.config.repository;
   elements.workflow.value = state.config.workflow;
@@ -74,7 +80,8 @@ async function loadState() {
   elements.delay.value = state.config.delay;
   elements.packages.value = state.packages.join('\n');
 
-  // Show/hide delay group based on navigation mode.
+  // Show/hide groups based on mode and navigation mode.
+  updateModeVisibility();
   updateDelayVisibility();
 }
 
@@ -86,6 +93,7 @@ async function saveState() {
 // Save config from form inputs.
 function saveConfig() {
   state.config = {
+    mode: elements.mode.value,
     owner: elements.owner.value.trim(),
     repository: elements.repository.value.trim(),
     workflow: elements.workflow.value.trim(),
@@ -103,6 +111,17 @@ function updateDelayVisibility() {
     elements.delayGroup.classList.remove('hidden');
   } else {
     elements.delayGroup.classList.add('hidden');
+  }
+}
+
+// Update visibility based on mode (configure vs delete).
+function updateModeVisibility() {
+  const isDeleteMode = elements.mode.value === 'delete';
+  // Hide autoSubmit in delete mode (always auto-submit for delete).
+  if (isDeleteMode) {
+    elements.autoSubmitGroup.classList.add('hidden');
+  } else {
+    elements.autoSubmitGroup.classList.remove('hidden');
   }
 }
 
@@ -130,6 +149,11 @@ function setupEventListeners() {
     input.addEventListener('blur', saveConfig);
   });
 
+  elements.mode.addEventListener('change', () => {
+    updateModeVisibility();
+    saveConfig();
+  });
+
   elements.navigationMode.addEventListener('change', () => {
     updateDelayVisibility();
     saveConfig();
@@ -150,6 +174,8 @@ function setupEventListeners() {
   elements.resetBtn.addEventListener('click', handleReset);
   elements.nextBtn.addEventListener('click', handleNext);
   elements.fillBtn.addEventListener('click', handleFillCurrent);
+  elements.retryBtn.addEventListener('click', handleRetry);
+  elements.skipBtn.addEventListener('click', handleSkip);
 }
 
 // Setup result tabs.
@@ -247,6 +273,46 @@ async function handleNext() {
   await processCurrentPackage();
 }
 
+// Handle retry current package button.
+async function handleRetry() {
+  if (state.currentIndex >= state.packages.length) {
+    showStatus('No package to retry', 'error');
+    return;
+  }
+
+  showStatus('Retrying current package...', 'info');
+  await processCurrentPackage();
+}
+
+// Handle skip current package button.
+async function handleSkip() {
+  const currentPkg = state.packages[state.currentIndex];
+  if (!currentPkg) {
+    showStatus('No package to skip', 'error');
+    return;
+  }
+
+  // Add to skipped.
+  if (!state.skipped.includes(currentPkg)) {
+    state.skipped.push(currentPkg);
+  }
+
+  state.currentIndex++;
+  await saveState();
+
+  if (state.currentIndex >= state.packages.length) {
+    state.status = 'idle';
+    await saveState();
+    updateUI();
+    showStatus('All packages processed!', 'success');
+    return;
+  }
+
+  updateUI();
+  showStatus(`Skipped ${currentPkg}, moving to next...`, 'info');
+  await processCurrentPackage();
+}
+
 // Handle fill current page button.
 async function handleFillCurrent() {
   saveConfig();
@@ -304,6 +370,8 @@ function updateUI() {
   elements.pauseBtn.disabled = !isRunning;
   elements.resumeBtn.disabled = !isPaused;
   elements.nextBtn.disabled = !isRunning || !isManualMode;
+  elements.retryBtn.disabled = !isRunning && !isPaused;
+  elements.skipBtn.disabled = !isRunning && !isPaused;
 
   // Progress display.
   const total = state.packages.length;
@@ -397,9 +465,15 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 
 // Handle result from content script.
 async function handlePackageResult(message) {
-  const { success, packageName, error, alreadyConfigured, notFound, completed } = message;
+  const { success, packageName, error, alreadyConfigured, notFound, completed, waiting } = message;
 
   console.log('[popup] handlePackageResult:', message);
+
+  // If waiting for challenge, just show status and don't advance.
+  if (waiting) {
+    showStatus(`Waiting for challenge: ${packageName}`, 'warning');
+    return;
+  }
 
   if (success) {
     if (alreadyConfigured && !completed) {

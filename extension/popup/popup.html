@@ -33,13 +33,20 @@
     <section class="config-section">
       <h2>Options</h2>
       <div class="form-group">
+        <label for="mode">Mode</label>
+        <select id="mode">
+          <option value="configure">Configure - Set up trusted publisher</option>
+          <option value="delete">Delete - Remove trusted publisher</option>
+        </select>
+      </div>
+      <div class="form-group">
         <label for="navigationMode">Navigation Mode</label>
         <select id="navigationMode">
           <option value="manual">Manual - Click "Next" after each</option>
           <option value="auto">Auto - Advance after success</option>
         </select>
       </div>
-      <div class="form-group">
+      <div class="form-group" id="autoSubmitGroup">
         <label for="autoSubmit">Form Submission</label>
         <select id="autoSubmit">
           <option value="false">Semi-auto - Fill form only</option>
@@ -72,6 +79,10 @@
       <div class="button-row">
         <button id="nextBtn" class="secondary" disabled>Next Package</button>
         <button id="fillBtn" class="secondary">Fill Current Page</button>
+      </div>
+      <div class="button-row">
+        <button id="retryBtn" class="secondary" disabled>Retry Current</button>
+        <button id="skipBtn" class="secondary" disabled>Skip Current</button>
       </div>
     </section>
 
